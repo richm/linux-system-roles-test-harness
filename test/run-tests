@@ -321,7 +321,7 @@ class Task:
     def __str__(self):
         return f"task {self.owner}/{self.repo}/{self.pull}:{self.image['name']}"
 
-    def run(self, artifactsdir, cachedir, inventory=None):
+    def run(self, artifactsdir, cachedir, openstack, inventory=None):
         """
         Runs the task and puts results into @artifactsdir. Returns True if all
         tests succeeded.
@@ -329,9 +329,11 @@ class Task:
 
         if not inventory:
             inventory = self.inventory
-        image_path = fetch_image(self.image["source"], cachedir)
-        if not image_path:
-            return False
+
+        if not openstack:
+            image_path = fetch_image(self.image["source"], cachedir)
+            if not image_path:
+                return False
 
         with checkout_repository(
             self.owner, self.repo, f"pull/{self.pull}/head"
@@ -411,19 +413,48 @@ class Task:
                     # we do need to run the setup (if it exists) in the same
                     # invocation of ansible-playbook, so that that it applies
                     # to the same VM as the test playbook.
-                    result = run(
-                        "ansible-playbook",
-                        "-vv",
-                        f"--inventory={inventory}",
-                        setup_file,
-                        playbook,
-                        env={
-                            "TEST_SUBJECTS": image_path,
-                            "TEST_ARTIFACTS": artifactsdir,
-                        },
-                        check=False,
-                        cwd=os.path.dirname(playbook),
-                    )
+                    if openstack:
+                        result = run(
+                            "citool",
+                            "-o",
+                            "debug",
+                            "ansible",
+                            "rules-engine",
+                            "guest-setup",
+                            "--playbooks",
+                            setup_file,
+                            "guess-environment",
+                            "--image-method=force",
+                            "--image",
+                            self.image["openstack_image"],
+                            "--distro-method=force",
+                            "--distro",
+                            self.image["openstack_image"],
+                            "openstack",
+                            "test-scheduler-sti",
+                            "--playbook",
+                            playbook,
+                            "test-scheduler",
+                            "test-schedule-runner-sti",
+                            "test-schedule-runner",
+                            "test-schedule-report",
+                            check=False,
+                            cwd=os.path.dirname(playbook),
+                        )
+                    else:
+                        result = run(
+                            "ansible-playbook",
+                            "-vv",
+                            f"--inventory={inventory}",
+                            setup_file,
+                            playbook,
+                            env={
+                                "TEST_SUBJECTS": image_path,
+                                "TEST_ARTIFACTS": artifactsdir,
+                            },
+                            check=False,
+                            cwd=os.path.dirname(playbook),
+                        )
 
                 if result.returncode != 0:
                     with open(ansible_log, "r") as ansible_file:
@@ -743,7 +774,7 @@ def handle_task(gh, args, config, task, ansible_id, dry_run=False):
             try:
                 task.inventory = args.inventory
                 result = task.run(
-                    f"{artifactsdir}", args.cache, inventory=args.inventory
+                    f"{artifactsdir}", args.cache, args.openstack, inventory=args.inventory
                 )
                 if result:
                     state = "success"
@@ -952,6 +983,12 @@ def main():
         default=int(os.environ.get("TEST_HARNESS_MAX_NUM_STATUSES", "60")),
         help="Number of statuses to retrieve - default 60 - github default is 30",
     )
+    parser.add_argument(
+        "--openstack",
+        help="Use citool and OpenStack",
+        default=bool(strtobool(os.environ.get("TEST_HARNESS_OPENSTACK", "False"))),
+        action="store_true",
+    )
 
     args = parser.parse_args()
 
@@ -978,7 +1015,8 @@ def main():
         repos = [r.split("/") for r in args.repositories.split(",")]
     setup_logging(config.get("logging", {}))
 
-    check_environment()
+    if not args.openstack:
+        check_environment()
 
     ansible_version = LooseVersion(get_ansible_version())
     logging.info("Using Ansible version {}".format(ansible_version))
