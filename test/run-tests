@@ -777,7 +777,7 @@ def handle_task(gh, args, config, task, ansible_id, dry_run=False):
                     f"{artifactsdir}",
                     args.cache,
                     args.openstack,
-                    inventory=args.inventory
+                    inventory=args.inventory,
                 )
                 if result:
                     state = "success"
