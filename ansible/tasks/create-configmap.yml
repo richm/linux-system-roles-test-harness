@@ -1,26 +1,80 @@
 ---
-- name: Create temp file for config
-  tempfile:
-    state: file
-    suffix: lsr.yml
-  register: config_tempfile
-  changed_when: false
+- block:
+    - name: Create temp file for config
+      tempfile:
+        state: file
+        suffix: lsr.yml
+      register: config_tempfile
+      changed_when: false
 
-- name: Generate config file
-  shell: oc -n {{ test_harness_namespace }} create configmap {{ __test_harness_cm_name }} \
-    --from-file=config.json={{ test_harness_config_dir }}/{{ __test_harness_cm_file }} --dry-run=true \
-    --output=yaml > {{ config_tempfile.path }}
-  changed_when: false
+    - name: Create temp file for build config
+      tempfile:
+        state: file
+        suffix: build-lsr.yml
+      register: build_config_tempfile
+      changed_when: false
+      when: __test_harness_build_config_files | d(false)
 
-- name: Ensure configmap is present
-  k8s:
-    src: "{{ config_tempfile.path }}"
-    namespace: "{{ test_harness_namespace }}"
-    state: present
-    apply: true
+    - name: Generate config file
+      shell: oc -n {{ test_harness_namespace }} create configmap {{ __test_harness_cm_name }} \
+        --from-file=config.json={{ test_harness_config_dir }}/{{ __test_harness_cm_file }} --dry-run=true \
+        --output=yaml > {{ config_tempfile.path }}
+      changed_when: false
 
-- name: Remove config file
-  file:
-    state: absent
-    path: "{{ config_tempfile.path }}"
-  changed_when: false
+    - name: Generate build config file
+      shell: |
+        oc -n {{ test_harness_namespace }} create configmap {{ __test_harness_bc }}-buildcm \
+        {% for file in __test_harness_build_config_files %}
+        --from-file={{ file | basename }}={{ test_harness_config_dir }}/{{ file }} \
+        {% endfor %}
+        --dry-run=true --output=yaml > {{ build_config_tempfile.path }}
+      changed_when: false
+      when: __test_harness_build_config_files | d(false)
+
+    - name: Ensure configmap is present
+      k8s:
+        src: "{{ config_tempfile.path }}"
+        namespace: "{{ test_harness_namespace }}"
+        state: present
+        apply: true
+      when: not test_harness_dry_run
+
+    - name: Ensure build configmap is present
+      k8s:
+        src: "{{ build_config_tempfile.path }}"
+        namespace: "{{ test_harness_namespace }}"
+        state: present
+        apply: true
+      when:
+        - not test_harness_dry_run
+        - __test_harness_build_config_files | d(false)
+
+  always:
+    - name: copy configmap file to {{ __test_harness_cm_name }}.yml
+      copy:
+        src: "{{ config_tempfile.path }}"
+        dest: "{{ __test_harness_cm_name }}.yml"
+      when: test_harness_dry_run | bool
+      changed_when: false
+
+    - name: copy build configmap file to {{ __test_harness_bc }}-buildcm.yml
+      copy:
+        src: "{{ build_config_tempfile.path }}"
+        dest: "{{ __test_harness_bc }}-buildcm.yml"
+      when:
+        - test_harness_dry_run | bool
+        - __test_harness_build_config_files | d(false)
+      changed_when: false
+
+    - name: Remove config file
+      file:
+        state: absent
+        path: "{{ config_tempfile.path }}"
+      changed_when: false
+
+    - name: Remove build config file
+      file:
+        state: absent
+        path: "{{ build_config_tempfile.path }}"
+      changed_when: false
+      when: __test_harness_build_config_files | d(false)

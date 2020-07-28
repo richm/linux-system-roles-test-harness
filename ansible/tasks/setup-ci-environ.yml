@@ -6,24 +6,36 @@
   # seems to be a problem in the k8s module
   - name: Ensure {{ __test_harness_environ }} objects are present
     k8s:
-      src: "{{ __test_harness_ci_obj_file }}"
+      definition: "{{ lookup('template', __test_harness_ci_obj_file) }}"
       namespace: "{{ test_harness_namespace }}"
       state: present
+    when: not test_harness_dry_run
 
-  - name: Ensure node selectors and/or run as root for {{ __test_harness_environ }}
-    when: test_harness_need_node_selector|bool or test_harness_run_as_root|bool
-    include_tasks: fixup-dc.yml
+  - name: make a copy of the openshift objects file
+    template:
+      src: "{{ __test_harness_ci_obj_file }}"
+      dest: "{{ __test_harness_dc }}.yml"
+    when: test_harness_dry_run | bool
 
   - name: Initiate build of {{ __test_harness_environ }} image
     command: oc -n {{ test_harness_namespace }} start-build --follow {{ __test_harness_bc }}
     changed_when: false
+    when:
+      - not test_harness_dry_run
+      - __test_harness_env_is_enabled | bool
 
   - name: Get {{ __test_harness_environ }} dc rollout status
     command: oc -n {{ test_harness_namespace }} rollout status --watch=false dc/{{ __test_harness_dc }}
     register: register_dc_rollout
     changed_when: false
+    when:
+      - not test_harness_dry_run
+      - __test_harness_env_is_enabled | bool
 
   - name: Ensure latest {{ __test_harness_environ }} dc is rolled out
     command: oc -n {{ test_harness_namespace }} rollout latest dc/{{ __test_harness_dc }}
     when: register_dc_rollout.stdout is match("^replication controller.*successfully rolled out$")
     changed_when: false
+    when:
+      - not test_harness_dry_run
+      - __test_harness_env_is_enabled | bool
