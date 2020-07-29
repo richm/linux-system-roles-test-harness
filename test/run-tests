@@ -883,6 +883,12 @@ def check_environment():
             logging.critical("test-harness needs config-citool.json file, aborting")
             sys.exit(1)
 
+        try:
+            run("citool" "--help")
+        except:
+            logging.critical("test-harness needs installed citool, aborting")
+            sys.exit(1)
+
 
 def setup_logging(config_logging):
     log_cfg_default = {
