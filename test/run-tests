@@ -869,17 +869,17 @@ def handle_task(gh, args, config, task, ansible_id, dry_run=False):
         sys.exit(1)
 
 
-def check_environment(backend):
+def check_environment(args):
     """
     Check whether the environment is sane.
     Intent here is to fail early for example if /dev/kvm is not available.
     """
-    if backend == KVM_BACKEND:
+    if args.backend == KVM_BACKEND:
         if not os.access("/dev/kvm", os.R_OK | os.W_OK):
             logging.critical("test-harness needs access to /dev/kvm, aborting")
             sys.exit(1)
 
-    elif backend == CITOOL_BACKEND:
+    elif args.backend == CITOOL_BACKEND:
         if not os.path.isfile(os.path.join(args.config, "config-citool.json")):
             logging.critical("test-harness needs config-citool.json file, aborting")
             sys.exit(1)
@@ -1036,7 +1036,7 @@ def main():
         repos = [r.split("/") for r in args.repositories.split(",")]
     setup_logging(config.get("logging", {}))
 
-    check_environment(args.backend)
+    check_environment(args)
 
     ansible_version = LooseVersion(get_ansible_version())
     logging.info("Using Ansible version {}".format(ansible_version))
