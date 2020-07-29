@@ -885,7 +885,7 @@ def check_environment(args):
         #     sys.exit(1)
 
         try:
-            run("citool" "--help")
+            run("citool", "--help")
         except Exception:
             logging.critical("test-harness needs installed citool, aborting")
             sys.exit(1)
