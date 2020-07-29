@@ -880,6 +880,7 @@ def check_environment(args):
             sys.exit(1)
 
     elif args.backend == CITOOL_BACKEND:
+        os.environ["PATH"] = "/opt/gluetool/bin:" + os.environ["PATH"]
         # if not os.path.isfile(os.path.join(args.config, "config-citool.json")):
         #     logging.critical("test-harness needs config-citool.json file, aborting")
         #     sys.exit(1)
