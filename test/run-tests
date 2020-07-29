@@ -39,6 +39,8 @@ COMMENT_CMD_TEST_ALL = "[citest]"
 COMMENT_CMD_TEST_PENDING = "[citest pending]"
 COMMENT_CMD_TEST_BAD = "[citest bad]"
 
+KVM_BACKEND = "kvm"
+CITOOL_BACKEND = "citool"
 
 class TransientErrorWaitTime:
     TIME_DEFAULT = 30
@@ -321,7 +323,7 @@ class Task:
     def __str__(self):
         return f"task {self.owner}/{self.repo}/{self.pull}:{self.image['name']}"
 
-    def run(self, artifactsdir, cachedir, openstack, inventory=None):
+    def run(self, artifactsdir, cachedir, backend, inventory=None):
         """
         Runs the task and puts results into @artifactsdir. Returns True if all
         tests succeeded.
@@ -330,7 +332,7 @@ class Task:
         if not inventory:
             inventory = self.inventory
 
-        if not openstack:
+        if backend == KVM_BACKEND:
             image_path = fetch_image(self.image["source"], cachedir)
             if not image_path:
                 return False
@@ -413,7 +415,7 @@ class Task:
                     # we do need to run the setup (if it exists) in the same
                     # invocation of ansible-playbook, so that that it applies
                     # to the same VM as the test playbook.
-                    if openstack:
+                    if backend == CITOOL_BACKEND:
                         result = run(
                             "citool",
                             "-o",
@@ -441,7 +443,7 @@ class Task:
                             check=False,
                             cwd=os.path.dirname(playbook),
                         )
-                    else:
+                    elif backend == KVM_BACKEND:
                         result = run(
                             "ansible-playbook",
                             "-vv",
@@ -455,6 +457,9 @@ class Task:
                             check=False,
                             cwd=os.path.dirname(playbook),
                         )
+
+                    else:
+                        assert False, "unreachable"
 
                 if result.returncode != 0:
                     with open(ansible_log, "r") as ansible_file:
@@ -776,7 +781,7 @@ def handle_task(gh, args, config, task, ansible_id, dry_run=False):
                 result = task.run(
                     f"{artifactsdir}",
                     args.cache,
-                    args.openstack,
+                    args.backend,
                     inventory=args.inventory,
                 )
                 if result:
@@ -868,9 +873,15 @@ def check_environment():
     Check whether the environment is sane.
     Intent here is to fail early for example if /dev/kvm is not available.
     """
-    if not os.access("/dev/kvm", os.R_OK | os.W_OK):
-        logging.critical("test-harness needs access to /dev/kvm, aborting")
-        sys.exit(1)
+    if args.backend == KVM_BACKEND:
+        if not os.access("/dev/kvm", os.R_OK | os.W_OK):
+            logging.critical("test-harness needs access to /dev/kvm, aborting")
+            sys.exit(1)
+
+    elif args.backend == CITOOL_BACKEND:
+        if not os.path.isfile(os.path.join(args.config, 'config-citool.json')):
+            logging.critical("test-harness needs config-citool.json file, aborting")
+            sys.exit(1)
 
 
 def setup_logging(config_logging):
@@ -987,10 +998,10 @@ def main():
         help="Number of statuses to retrieve - default 60 - github default is 30",
     )
     parser.add_argument(
-        "--openstack",
-        help="Use citool and OpenStack",
-        default=bool(strtobool(os.environ.get("TEST_HARNESS_OPENSTACK", "False"))),
-        action="store_true",
+        "--backend",
+        default=os.environ.get("TEST_HARNESS_BACKEND", KVM_BACKEND),
+        choices=[KVM_BACKEND, CITOOL_BACKEND],
+        help="Backend for testing",
     )
 
     args = parser.parse_args()
@@ -1018,8 +1029,7 @@ def main():
         repos = [r.split("/") for r in args.repositories.split(",")]
     setup_logging(config.get("logging", {}))
 
-    if not args.openstack:
-        check_environment()
+    check_environment()
 
     ansible_version = LooseVersion(get_ansible_version())
     logging.info("Using Ansible version {}".format(ansible_version))
