@@ -41,7 +41,7 @@ COMMENT_CMD_TEST_BAD = "[citest bad]"
 
 KVM_BACKEND = "kvm"
 CITOOL_BACKEND = "citool"
-
+CITOOL_COMMAND = "/entrypoint.sh"
 
 class TransientErrorWaitTime:
     TIME_DEFAULT = 30
@@ -418,7 +418,7 @@ class Task:
                     # to the same VM as the test playbook.
                     if backend == CITOOL_BACKEND:
                         result = run(
-                            "citool",
+                            CITOOL_COMMAND,
                             "-o",
                             "debug",
                             "ansible",
@@ -880,15 +880,12 @@ def check_environment(args):
             sys.exit(1)
 
     elif args.backend == CITOOL_BACKEND:
-        os.environ["PATH"] = "/opt/gluetool/bin:" + os.environ["PATH"]
-        # if not os.path.isfile(os.path.join(args.config, "config-citool.json")):
-        #     logging.critical("test-harness needs config-citool.json file, aborting")
-        #     sys.exit(1)
-
         try:
-            run("citool", "--help")
+            run(CITOOL_COMMAND, "--help")
         except Exception:
-            logging.critical("test-harness needs installed citool, aborting")
+            logging.critical(
+                f"test-harness needs installed citool command {CITOOL_COMMAND}, aborting"
+            )
             sys.exit(1)
 
 
