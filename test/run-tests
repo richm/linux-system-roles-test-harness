@@ -420,7 +420,7 @@ class Task:
                         result = run(
                             CITOOL_COMMAND,
                             "-o",
-                            "debug",
+                            f"{artifactsdir}/citool-debug.log",
                             "ansible",
                             "rules-engine",
                             "guest-setup",
