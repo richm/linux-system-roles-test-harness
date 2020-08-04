@@ -43,6 +43,7 @@ KVM_BACKEND = "kvm"
 CITOOL_BACKEND = "citool"
 CITOOL_COMMAND = "/entrypoint.sh"
 
+
 class TransientErrorWaitTime:
     TIME_DEFAULT = 30
     TIME_MAX = 600
@@ -228,7 +229,7 @@ def run(*argv, env=None, check=True, cwd=None, return_stdout=False):
     if return_stdout:
         stdout_val = subprocess.PIPE
 
-    return subprocess.run(
+    result = subprocess.run(
         argv,
         env=runenv,
         check=check,
@@ -237,6 +238,8 @@ def run(*argv, env=None, check=True, cwd=None, return_stdout=False):
         cwd=cwd,
         encoding="utf-8",
     )
+    logging.debug(f"run: result of {argv} was {result}")
+    return result
 
 
 def fetch_image(url, cache):
@@ -324,7 +327,9 @@ class Task:
     def __str__(self):
         return f"task {self.owner}/{self.repo}/{self.pull}:{self.image['name']}"
 
-    def run(self, artifactsdir, private_artifactsdir, cachedir, backend, inventory=None):
+    def run(
+        self, artifactsdir, private_artifactsdir, cachedir, backend, inventory=None
+    ):
         """
         Runs the task and puts results into @artifactsdir. Puts non-public
         artifacts into @private_artifactsdir.  Returns True if all
@@ -471,9 +476,11 @@ class Task:
                                 return None
 
                     print("FAILURE")
+                    logging.debug(f"test failed for {artifactsdir}")
                     return False
 
                 print("SUCCESS")
+            logging.debug(f"test passed for {artifactsdir}")
             return True
 
 
@@ -792,6 +799,7 @@ def handle_task(gh, args, config, task, ansible_id, dry_run=False):
                     args.backend,
                     inventory=args.inventory,
                 )
+                logging.debug(f"task result {result} for {artifactsdir}")
                 if result:
                     state = "success"
                 elif result is None:
@@ -802,6 +810,7 @@ def handle_task(gh, args, config, task, ansible_id, dry_run=False):
 
             # Do not handle these exceptions
             except (KeyboardInterrupt, SystemExit):
+                logging.debug(f"task terminated unexpectedly for {artifactsdir}")
                 raise
 
             # pylint: disable=broad-except,invalid-name
@@ -824,7 +833,7 @@ def handle_task(gh, args, config, task, ansible_id, dry_run=False):
         if dry_run:
             logging.info(
                 f"Artifacts kept at: {artifactsdir}; "
-                f"private artifacts at {private_artifactsdir"
+                f"private artifacts at {private_artifactsdir}"
             )
             with open(local_test_log) as test_log:
                 logging.info(test_log.read())
@@ -850,10 +859,11 @@ def handle_task(gh, args, config, task, ansible_id, dry_run=False):
     finally:
         duration = (datetime.datetime.utcnow() - start_time).seconds
         logging.info(
-            "Finished in %d seconds %s: %s",
+            "Finished in %d seconds %s: %s - %s",
             duration,
             task,
             state if state and state != "pending" else "abandoned",
+            description,
         )
         while not dry_run:
             try:
@@ -895,7 +905,8 @@ def check_environment(args):
             run(CITOOL_COMMAND, "--help")
         except Exception:
             logging.critical(
-                f"test-harness needs installed citool command {CITOOL_COMMAND}, aborting"
+                f"test-harness needs installed citool command {CITOOL_COMMAND}, "
+                "aborting"
             )
             sys.exit(1)
 
