@@ -324,9 +324,10 @@ class Task:
     def __str__(self):
         return f"task {self.owner}/{self.repo}/{self.pull}:{self.image['name']}"
 
-    def run(self, artifactsdir, cachedir, backend, inventory=None):
+    def run(self, artifactsdir, private_artifactsdir, cachedir, backend, inventory=None):
         """
-        Runs the task and puts results into @artifactsdir. Returns True if all
+        Runs the task and puts results into @artifactsdir. Puts non-public
+        artifacts into @private_artifactsdir.  Returns True if all
         tests succeeded.
         """
 
@@ -420,7 +421,7 @@ class Task:
                         result = run(
                             CITOOL_COMMAND,
                             "-o",
-                            f"{artifactsdir}/citool-debug.log",
+                            f"{private_artifactsdir}/citool-debug.log",
                             "ansible",
                             "rules-engine",
                             "guest-setup",
@@ -770,8 +771,13 @@ def handle_task(gh, args, config, task, ansible_id, dry_run=False):
         timestamp = start_time.strftime("%Y%m%d-%H%M%S")
 
         workdir = tempfile.mkdtemp(prefix=f"linux-system-role-test-work-{task.id_}-")
+        private_workdir = tempfile.mkdtemp(
+            prefix=f"linux-system-role-test-work-private-{task.id_}-"
+        )
         artifactsdir = f"{workdir}/artifacts"
         os.makedirs(artifactsdir)
+        private_artifactsdir = f"{private_workdir}/artifacts"
+        os.makedirs(private_artifactsdir)
 
         with redirect_output(f"{artifactsdir}/test.log"):
             print(title)
@@ -780,7 +786,8 @@ def handle_task(gh, args, config, task, ansible_id, dry_run=False):
             try:
                 task.inventory = args.inventory
                 result = task.run(
-                    f"{artifactsdir}",
+                    artifactsdir,
+                    private_artifactsdir,
                     args.cache,
                     args.backend,
                     inventory=args.inventory,
@@ -815,7 +822,10 @@ def handle_task(gh, args, config, task, ansible_id, dry_run=False):
         local_test_log = f"{artifactsdir}/test.log"
 
         if dry_run:
-            logging.info(f"Artifacts kept at: {artifactsdir}")
+            logging.info(
+                f"Artifacts kept at: {artifactsdir}; "
+                f"private artifacts at {private_artifactsdir"
+            )
             with open(local_test_log) as test_log:
                 logging.info(test_log.read())
         else:
@@ -835,6 +845,7 @@ def handle_task(gh, args, config, task, ansible_id, dry_run=False):
             # FIXME: workdir might be kept when python crashes
             if not args.keep_results:
                 shutil.rmtree(workdir)
+                shutil.rmtree(private_workdir)
 
     finally:
         duration = (datetime.datetime.utcnow() - start_time).seconds
