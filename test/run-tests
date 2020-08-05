@@ -851,10 +851,9 @@ def handle_task(gh, args, config, task, ansible_id, dry_run=False):
                     state = "error"
                     description += ": Error uploading results"
             else:
-                # copy files to private_artifactsdir
-                shutil.copytree(
-                    artifactsdir, private_artifactsdir, dirs_exist_ok=True
-                )
+                # move files to private_artifactsdir
+                for ff in os.listdir(artifactsdir):
+                    shutil.move(f"{artifactsdir}/{ff}", f"{private_artifactsdir}/{ff}")
 
             # FIXME: workdir might be kept when python crashes
             if not args.keep_results:
