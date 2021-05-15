@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: List
+items:
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    annotations:
+      description: Keeps track of changes in the application image
+    name: lsr-proxy
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      description: Defines how to build the application
+      template.alpha.openshift.io/wait-for-ready: 'true'
+    name: lsr-proxy
+  spec:
+    output:
+      to:
+        kind: ImageStreamTag
+        name: lsr-proxy:latest
+    source:
+      contextDir: lsr-proxy
+      git:
+        ref: squid-proxy
+        uri: https://github.com/richm/test-harness
+      type: Git
+    strategy:
+      dockerStrategy: {}
+    triggers:
+    - type: ImageChange
+    - type: ConfigChange
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      description: Exposes and load balances the application pods
+    name: lsr-proxy
+  spec:
+    ports:
+    - name: web
+      port: 3128
+      targetPort: 3128
+    selector:
+      name: lsr-proxy
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    annotations:
+      description: Defines how to deploy the application server
+      template.alpha.openshift.io/wait-for-ready: 'true'
+    name: lsr-proxy
+  spec:
+    replicas: 1
+    selector:
+      name: lsr-proxy
+    strategy:
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          name: lsr-proxy
+        name: lsr-proxy
+      spec:
+        serviceAccount: tester
+        serviceAccountName: tester
+        containers:
+          - env: []
+            securityContext:
+              runAsUser: 0
+            image: lsr-proxy:latest
+            name: lsr-proxy
+            ports:
+              - containerPort: 3128
+            resources:
+              limits:
+                memory: 4Gi
+    triggers:
+      - imageChangeParams:
+          automatic: true
+          containerNames:
+            - lsr-proxy
+          from:
+            kind: ImageStreamTag
+            name: lsr-proxy:latest
+        type: ImageChange

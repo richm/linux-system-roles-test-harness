@@ -365,12 +365,13 @@ class Task:
     repository against an OS image.
     """
 
-    def __init__(self, owner, repo, pull, head, image):
+    def __init__(self, owner, repo, pull, head, image, proxy):
         self.owner = owner
         self.repo = repo
         self.pull = pull
         self.head = head
         self.image = image
+        self.proxy = proxy == "use-proxy"
         self.inventory = "/usr/share/ansible/inventory/standard-inventory-qcow2"
 
         self.id_ = f"pull-{owner}_{repo}-{pull}-{self.head[:7]}-" + image["name"]
@@ -534,6 +535,9 @@ class Task:
                 else:
                     setup_plays.extend(self.image["setup"])
 
+            proxy_play = self.setup_proxy_play()
+            if proxy_play:
+                setup_plays.append(proxy_play)
             with open(setup_file, "w") as outfile:
                 yaml.dump(setup_plays, outfile)
 
@@ -710,6 +714,73 @@ class Task:
             logging.debug(f"test passed for {artifactsdir}")
             return True
 
+    def setup_proxy_play(self):
+        """
+        add the play to set up the proxy
+        """
+        if not self.proxy:
+            return {}
+        proxy_host = os.environ.get("LSR_PROXY_STAGING_SERVICE_HOST")
+        if not proxy_host:
+            proxy_host = os.environ.get("LSR_PROXY_SERVICE_HOST")
+        if not proxy_host:
+            return {}
+        proxy_port = os.environ.get("LSR_PROXY_STAGING_SERVICE_PORT")
+        if not proxy_port:
+            proxy_port = os.environ.get("LSR_PROXY_SERVICE_PORT")
+        if not proxy_port:
+            return {}
+        tasks = [
+            {
+                "name": "see if /etc/dnf/dnf.conf exists",
+                "register": "__mssql_dnf_conf",
+                "stat": {"path": "/etc/dnf/dnf.conf"},
+            },
+            {
+                "name": "see if /etc/yum.conf exists",
+                "register": "__mssql_yum_conf",
+                "stat": {"path": "/etc/yum.conf"},
+            },
+            {
+                "name": "set pkg conf file",
+                "set_fact": {
+                    "__mssql_pkg_conf_file": "{{ '/etc/dnf/dnf.conf' if "
+                    "__mssql_dnf_conf.stat.exists else "
+                    "'/etc/yum.conf' if "
+                    "__mssql_yum_conf.stat.exists else '' "
+                    "}}"
+                },
+            },
+            {
+                "ini_file": {
+                    "option": "proxy",
+                    "path": "{{ __mssql_pkg_conf_file }}",
+                    "section": "main",
+                    "value": f"'{proxy_host}:{proxy_port}'",
+                },
+                "name": "configure proxy",
+                "when": "__mssql_pkg_conf_file | length > 0",
+            },
+            {
+                "ini_file": {
+                    "option": "sslverify",
+                    "path": "{{ __mssql_pkg_conf_file }}",
+                    "section": "main",
+                    "value": "False",
+                },
+                "name": "configure proxy ssl options",
+                "when": "__mssql_pkg_conf_file | length > 0",
+            },
+        ]
+        play = {
+            "name": "Setup package proxy",
+            "hosts": "all",
+            "become": True,
+            "gather_facts": False,
+            "tasks": tasks,
+        }
+        return play
+
 
 def pull_ok_to_test(gh, owner, repo, pull, author, head):
     """
@@ -827,7 +898,7 @@ def choose_task(gh, repos, images, config, ansible_id, args):
     Returns None if there's nothing to do.
     """
 
-    for owner, repo in repos:
+    for owner, repo, proxy in repos:
         pulls = gh.get(f"repos/{owner}/{repo}/pulls").json()
         random.shuffle(pulls)
         for pull in pulls:
@@ -849,7 +920,7 @@ def choose_task(gh, repos, images, config, ansible_id, args):
                 status = statuses.get(status_context)
 
                 if check_commit_needs_testing(status, commands):
-                    task = Task(owner, repo, number, head, image)
+                    task = Task(owner, repo, number, head, image, proxy)
                     logging.debug(
                         f"Testing PR {pull['url']} with image {image['name']}"
                     )
@@ -1309,6 +1380,11 @@ def main():
         action="store_true",
         help="Run CI tests in the roles and collections formats",
     )
+    parser.add_argument(
+        "--use-proxy",
+        default=os.environ.get("TEST_HARNESS_USE_PROXY", None),
+        help="Set up yum repos to use proxy",
+    )
 
     args = parser.parse_args()
 
@@ -1333,6 +1409,11 @@ def main():
 
     if args.repositories:
         repos = [r.split("/") for r in args.repositories.split(",")]
+    # add the proxy flag if not present
+    repos = [
+        r[:2] + [args.use_proxy] if len(r) < 3 or r[2] != "use-proxy" else r
+        for r in repos
+    ]  # noqa:E501
     setup_logging(config.get("logging", {}))
 
     check_environment(args)
@@ -1449,7 +1530,7 @@ def main():
         number = pull["number"]
 
         for image in test_images:
-            task = Task(owner, repo, number, head, image)
+            task = Task(owner, repo, number, head, image, args.use_proxy)
             handle_task(
                 gh,
                 args,

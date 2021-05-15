@@ -46,10 +46,13 @@
       vars:
         __test_harness_environ: staging
         __test_harness_imgstream_name: linux-system-roles
+        __test_harness_proxy_imgstream_name: lsr-proxy
         __test_harness_cm_name: config-staging
         __test_harness_cm_file: config-staging.json
         __test_harness_dc: linux-system-roles-staging
+        __test_harness_proxy_dc: lsr-proxy-staging
         __test_harness_bc: linux-system-roles-staging
+        __test_harness_proxy_bc: lsr-proxy-staging
         __test_harness_secret_name: secrets-staging
         __test_harness_ghtoken_file: github-token-staging
         __test_harness_deploy_replicas: "{{ test_harness_deploy_replicas_staging | d(1) }}"
@@ -60,6 +63,7 @@
         __test_harness_dockerfile_post: "{{ test_harness_dockerfile_post }}"
         __test_harness_deploy_env: "{{ test_harness_deploy_env | combine(test_harness_deploy_env_staging) }}"
         __test_harness_run_as_root: "{{ test_harness_run_as_root }}"
+        __test_harness_proxy_enable: true
       when: test_harness_use_staging | d(false) | bool
 
     - name: Ensure production is set up
@@ -67,10 +71,13 @@
       vars:
         __test_harness_environ: production
         __test_harness_imgstream_name: linux-system-roles
+        __test_harness_proxy_imgstream_name: lsr-proxy
         __test_harness_cm_name: config
         __test_harness_cm_file: config.json
         __test_harness_dc: linux-system-roles
+        __test_harness_proxy_dc: lsr-proxy
         __test_harness_bc: linux-system-roles
+        __test_harness_proxy_bc: lsr-proxy
         __test_harness_secret_name: secrets
         __test_harness_ghtoken_file: github-token
         __test_harness_deploy_replicas: "{{ test_harness_deploy_replicas | d(8) }}"
@@ -81,6 +88,7 @@
         __test_harness_dockerfile_post: "{{ test_harness_dockerfile_post }}"
         __test_harness_deploy_env: "{{ test_harness_deploy_env }}"
         __test_harness_run_as_root: "{{ test_harness_run_as_root }}"
+        __test_harness_proxy_enable: false
       when: test_harness_use_production | d(false) | bool
 
     - name: Ensure citool staging is set up
@@ -102,6 +110,7 @@
         __test_harness_dockerfile_post: "{{ test_harness_dockerfile_post_citool | d([]) }}"
         __test_harness_deploy_env: "{{ test_harness_deploy_env | combine(test_harness_deploy_env_citool) | d({}) }}"
         __test_harness_run_as_root: false
+        __test_harness_proxy_enable: false
       when:
         - false # disable for now
         - test_harness_use_staging | d(false) | bool
@@ -125,6 +134,7 @@
         __test_harness_dockerfile_post: "{{ test_harness_dockerfile_post }}"
         __test_harness_deploy_env: "{{ test_harness_deploy_env | combine(test_harness_deploy_env_staging) | combine(test_harness_deploy_env_centos7) }}"
         __test_harness_run_as_root: "{{ test_harness_run_as_root }}"
+        __test_harness_proxy_enable: false
       when: test_harness_use_staging | d(false) | bool
 
     - name: Ensure centos7 production is set up
@@ -146,4 +156,5 @@
         __test_harness_dockerfile_post: "{{ test_harness_dockerfile_post }}"
         __test_harness_deploy_env: "{{ test_harness_deploy_env | combine(test_harness_deploy_env_centos7) }}"
         __test_harness_run_as_root: "{{ test_harness_run_as_root }}"
+        __test_harness_proxy_enable: false
       when: test_harness_use_production | d(false) | bool
